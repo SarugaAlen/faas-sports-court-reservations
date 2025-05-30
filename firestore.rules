@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    match /reservations/{reservationId} {
+      allow read: if false;  // or adjust as needed
+      allow write: if false; // all writes are handled by submitCourtReservation function
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
