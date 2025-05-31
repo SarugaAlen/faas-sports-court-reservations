@@ -1,4 +1,4 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import type { CallableRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
@@ -12,7 +12,7 @@ interface ReservationRequestData {
   endTime: string;
 }
 
-export const submitCourtReservation = onCall(
+exports.submitCourtReservation = onCall(
   async (request: CallableRequest<ReservationRequestData>) => {
     const userId = request.auth?.uid || "test-user-id-123";
     const userEmail = request.auth?.token.email || "test@example.com";
@@ -116,3 +116,29 @@ export const submitCourtReservation = onCall(
     }
   }
 );
+
+exports.getAllReservations = onRequest(async (req, res) => {
+  if (req.method !== "GET") {
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  try {
+    const snapshot = await db.collection("reservations").get();
+    const reservations = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.status(200).json({
+      status: "success",
+      data: reservations,
+    });
+  } catch (error) {
+    console.error("Error fetching reservations:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to fetch reservations.",
+    });
+  }
+});
