@@ -1,4 +1,9 @@
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
+import {
+  onDocumentCreated,
+  onDocumentUpdated,
+  onDocumentDeleted,
+} from "firebase-functions/v2/firestore";
 import type { CallableRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
@@ -142,3 +147,44 @@ exports.getAllReservations = onRequest(async (req, res) => {
     });
   }
 });
+
+exports.onReservationCreated = onDocumentCreated(
+  "reservations/{reservationId}",
+  async (event) => {
+    const reservation = event.data?.data();
+    if (!reservation) return;
+
+    console.log(
+      `✅ New reservation created with ID: ${event.params.reservationId}`
+    );
+    console.log("Reservation data:", reservation);
+  }
+);
+
+exports.onReservationUpdated = onDocumentUpdated(
+  "reservations/{reservationId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const reservationId = event.params.reservationId;
+
+    if (!before || !after) return;
+
+    if (before.status !== after.status) {
+      console.log(
+        `🔄 Reservation ${reservationId} status changed from "${before.status}" to "${after.status}"`
+      );
+    }
+  }
+);
+
+exports.onReservationDeleted = onDocumentDeleted(
+  "reservations/{reservationId}",
+  async (event) => {
+    const reservation = event.data?.data();
+    const reservationId = event.params.reservationId;
+
+    console.log(`🗑️ Reservation ${reservationId} deleted`);
+    console.log("Deleted reservation data:", reservation);
+  }
+);
