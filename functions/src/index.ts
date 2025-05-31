@@ -7,6 +7,9 @@ import {
 import type { CallableRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import { getMessaging } from "firebase-admin/messaging";
+import { onObjectFinalized } from "firebase-functions/v2/storage";
 
 admin.initializeApp();
 const db = getFirestore();
@@ -188,3 +191,59 @@ exports.onReservationDeleted = onDocumentDeleted(
     console.log("Deleted reservation data:", reservation);
   }
 );
+
+exports.onFileUpload = onObjectFinalized(
+  {
+    bucket: "your-bucket-name.appspot.com",
+  },
+  async (event) => {
+    const file = event.data;
+    console.log(`📂 New file uploaded: ${file.name}`);
+  }
+);
+
+exports.cleanOldReservations = onSchedule("every 30 minutes", async () => {
+  const now = Date.now();
+  const cutoff = new Date(now - 60 * 60 * 1000); // 1 ura nazaj
+
+  const snapshot = await db
+    .collection("reservations")
+    .where("status", "==", "pending")
+    .where("startTime", "<", cutoff)
+    .get();
+
+  const batch = db.batch();
+  snapshot.forEach((doc) => batch.delete(doc.ref));
+  await batch.commit();
+
+  console.log(`🧹 Removed ${snapshot.size} stale pending reservations`);
+});
+
+exports.notifyOnConfirmation = onDocumentUpdated(
+  "reservations/{reservationId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+
+    if (
+      before &&
+      after &&
+      before.status !== after.status &&
+      after.status === "confirmed"
+    ) {
+      const fcmToken = after.fcmToken;
+      if (fcmToken) {
+        await getMessaging().send({
+          token: fcmToken,
+          notification: {
+            title: "Rezervacija potrjena",
+            body: "Vaša rezervacija je potrjena.",
+          },
+        });
+        console.log("📣 Poslano FCM obvestilo");
+      }
+    }
+  }
+);
+
+
