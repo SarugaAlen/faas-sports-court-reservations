@@ -1,12 +1,54 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    match /reservations/{reservationId} {
-      allow read: if false;  // or adjust as needed
-      allow write: if false; // all writes are handled by submitCourtReservation function
+
+    // Pravila za zbirko 'courts' (igrišča)
+    match /courts/{courtId} {
+      // Vsakdo lahko bere podatke o igriščih (ime, opis, lokacija itd.).
+      // To podpira funkciji `listCourts` in `getCourtDetails`.
+      allow read: if true;
+
+      // Samo avtenticirani administratorji lahko ustvarjajo, posodabljajo ali brišejo igrišča.
+      // Predpostavlja se, da imate za administratorje nastavljen custom claim 'admin: true'.
+      allow write: if request.auth != null && request.auth.token.admin == true;
     }
 
+    // Pravila za zbirko 'reservations' (rezervacije)
+    match /reservations/{reservationId} {
+      // Dovolite ustvarjanje rezervacije le, če je uporabnik prijavljen.
+      // Funkcija `submitCourtReservation` obravnava vse kompleksne validacije
+      // (časovni konflikti, trajanje, preverjanje obstoja igrišča).
+      allow create: if request.auth != null;
+
+      // Dovolite uporabniku, da prebere svoje lastne rezervacije,
+      // ali administratorju, da prebere katero koli rezervacijo.
+      allow read: if request.auth != null && (request.auth.uid == resource.data.userId || request.auth.token.admin == true);
+
+      // Pravilo za posodabljanje rezervacij:
+      allow update: if request.auth != null && (
+                        // Primer 1: Uporabnik preklicuje svojo lastno rezervacijo.
+                        // Dovoljeno je spremeniti samo polja 'status' in 'cancelledAt',
+                        // pri čemer mora biti nov status 'cancelled',
+                        // in prejšnji status mora biti 'pending' ali 'confirmed'.
+                        (request.auth.uid == resource.data.userId &&
+                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt']) &&
+                         request.resource.data.status == 'cancelled' &&
+                         resource.data.status in ['pending', 'confirmed'])
+                        ||
+                        // Primer 2: Administrator posodablja katero koli rezervacijo.
+                        // Administrator ima polni dostop do posodabljanja.
+                        request.auth.token.admin == true
+                      );
+
+      // Dovolite samo administratorjem brisanje rezervacij.
+      // Čeprav funkcija `onReservationDeleted` deluje z admin pravicami,
+      // to pravilo preprečuje neposredno brisanje s strani klienta, ki ni admin.
+      allow delete: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Privzeto pravilo: zavrnite vse bralne in pisalne operacije za
+    // katere koli druge zbirke ali dokumente, ki niso eksplicitno definirani zgoraj.
+    // To je pomembno za varnost in zagotavlja, da so vsi dostopi kontrolirani.
     match /{document=**} {
       allow read, write: if false;
     }
